@@ -396,10 +396,9 @@ app.get('/api/public/info', (req: Request, res: Response) => {
   const host = req.get('host') || '';
   const computedUrl =
     db.settings.customSiteUrl ||
-    process.env.APP_URL ||
     process.env.RENDER_EXTERNAL_URL ||
     (host.includes('onrender.com') ? `https://${host}` : '') ||
-    (host.includes('run.app') ? `https://${host}` : 'https://ais-pre-vckafpntoi4jnvqukk5ldl-733255150384.asia-southeast1.run.app');
+    'https://telegram-cm2m.onrender.com';
 
   res.json({
     brandName: db.settings.brandName,
@@ -410,7 +409,7 @@ app.get('/api/public/info', (req: Request, res: Response) => {
     isGameActive: db.settings.isGameActive,
     publicAppUrl: computedUrl,
     customSiteUrl: db.settings.customSiteUrl || '',
-    sharedAppUrl: 'https://ais-pre-vckafpntoi4jnvqukk5ldl-733255150384.asia-southeast1.run.app',
+    sharedAppUrl: 'https://telegram-cm2m.onrender.com',
   });
 });
 
@@ -1801,11 +1800,11 @@ app.post('/api/admin/integrations/test-firebase', requireAdmin, async (req: Requ
 });
 
 // Admin - Reset / Re-seed Data
-app.post('/api/admin/reset-data', requireAdmin, (req: Request, res: Response) => {
-  const { mode } = req.body; // 'clear_winners' | 'full_reset'
+const handleResetWinners = (req: Request, res: Response) => {
+  const { mode } = req.body || {};
   const db = getDatabase();
 
-  if (mode === 'clear_winners') {
+  if (!mode || mode === 'clear_winners') {
     db.winners = [];
     db.allowedPhones.forEach((p) => {
       p.hasWon = false;
@@ -1830,53 +1829,64 @@ app.post('/api/admin/reset-data', requireAdmin, (req: Request, res: Response) =>
 
   saveDatabase(db);
   res.json({ success: true, message: 'Ma’lumotlar yangilandi.' });
-});
+};
+app.post('/api/admin/reset-data', requireAdmin, handleResetWinners);
+app.post('/api/admin/reset-winners', requireAdmin, handleResetWinners);
 
 // Admin - Export entire database backup JSON
-app.get('/api/admin/export-database', requireAdmin, (req: Request, res: Response) => {
+const handleExportDatabase = (req: Request, res: Response) => {
   const db = getDatabase();
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="sovga_baza_backup_${new Date().toISOString().slice(0, 10)}.json"`);
   res.json(db);
-});
+};
+app.get('/api/admin/export-database', requireAdmin, handleExportDatabase);
+app.get('/api/admin/backup/export', requireAdmin, handleExportDatabase);
 
 // Admin - Import/Restore database from backup JSON
-app.post('/api/admin/import-database', requireAdmin, (req: Request, res: Response) => {
-  const { data } = req.body;
-  if (!data || !data.prizes || !Array.isArray(data.prizes)) {
+const handleImportDatabase = (req: Request, res: Response) => {
+  const payload = req.body?.data ? req.body.data : req.body;
+  if (!payload || !payload.prizes || !Array.isArray(payload.prizes)) {
     return res.status(400).json({ error: 'Noto‘g‘ri zaxira fayl formati.' });
   }
 
   const current = getDatabase();
   const restored: DatabaseSchema = {
-    settings: { ...current.settings, ...(data.settings || {}) },
-    prizes: data.prizes,
-    allowedPhones: Array.isArray(data.allowedPhones) ? data.allowedPhones : current.allowedPhones,
-    productQrs: Array.isArray(data.productQrs) ? data.productQrs : current.productQrs,
-    winners: Array.isArray(data.winners) ? data.winners : current.winners,
+    settings: { ...current.settings, ...(payload.settings || {}) },
+    prizes: payload.prizes,
+    allowedPhones: Array.isArray(payload.allowedPhones) ? payload.allowedPhones : current.allowedPhones,
+    productQrs: Array.isArray(payload.productQrs) ? payload.productQrs : current.productQrs,
+    winners: Array.isArray(payload.winners) ? payload.winners : current.winners,
   };
 
   saveDatabase(restored);
   res.json({ success: true, message: 'Ma’lumotlar bazasi zaxira nusxadan muvaffaqiyatli tiklandi.' });
-});
+};
+app.post('/api/admin/import-database', requireAdmin, handleImportDatabase);
+app.post('/api/admin/backup/import', requireAdmin, handleImportDatabase);
 
 // ---------------------------------------------
 // VITE DEV & PROD SERVING
 // ---------------------------------------------
 async function setupServer() {
-  if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(process.cwd(), 'dist');
+  const distPath = path.resolve(process.cwd(), 'dist');
+  const hasBuiltDist = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if ((isProd || process.env.RENDER) && hasBuiltDist) {
     app.use(express.static(distPath));
     app.get('*', (req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  } else {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+      },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
   }
 
   app.listen(PORT, '0.0.0.0', () => {
