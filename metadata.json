@@ -1,0 +1,6 @@
+{
+  "name": "Summaya Salomatlik Markazi - Omadli Yutuqlar Platformasi",
+  "description": "Summaya Salomatlik Markazi rasmiy yutuqli aksiyasi va xavfsiz boshqaruv tizimi. Sog'lom hayot — baxtli kelajak!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
